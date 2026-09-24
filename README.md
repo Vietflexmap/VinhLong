@@ -20,7 +20,7 @@ Vĩnh Long Local is a destination platform and local-experience marketplace for 
 ## Current features
 
 - Real Vĩnh Long photography
-- Responsive English-language design
+- Responsive English-language design\n- Virtual 3D Tours collection with 13 original-provider VR/360 experiences sourced from Vietflexmap/3DGIS\n
 - Experience marketplace filters
 - Local host network prototype
 - Custom trip request flow stored locally in the browser
