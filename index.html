@@ -178,7 +178,7 @@
       <details class="map-float map-layers">
         <summary><span><small>MAP CONTEXT</small><strong>Layers & geography</strong></span><i>⌄</i></summary>
         <div class="map-float-body map-layer-actions">
-          <button class="map-layer-btn active" id="adminLayerToggle" type="button"><span>Administrative boundaries</span><small>124 units · 2026</small></button>
+          <button class="map-layer-btn" id="adminLayerToggle" type="button"><span>Administrative boundaries</span><small>124 units · load on demand</small></button>
           <button class="map-layer-btn" id="fitProvinceBtn" type="button"><span>View whole province</span><small>Fit all boundaries</small></button>
         </div>
       </details>
@@ -200,7 +200,7 @@
         </details>
       </aside>
     </div>
-    <div class="tourmap-underbar"><span><b>MapLibre online</b> · travel routes + 2026 administrative geography</span><button id="adminBrowserToggle" type="button">Find a commune or ward ↓</button></div>
+    <div class="tourmap-underbar"><span><b>Interactive map</b> · routes first · local context on demand</span><button id="adminBrowserToggle" type="button">Find a commune or ward ↓</button></div>
   </div>
 
   <details class="admin-browser" id="adminBrowser">
@@ -300,7 +300,7 @@ setRoute('day1');
 // Interactive Vĩnh Long Tour Map — MapLibre online with Vĩnh Long 2026 administrative geography.
 const TOUR_MAP_STYLE='https://tiles.openfreemap.org/styles/liberty';
 let mapLibreBooting=false;
-let adminGeoJSON=null, adminDataPromise=null, adminLayerVisible=true, selectedAdminId=null, hoverAdminId=null, maplibreModule=null;
+let adminGeoJSON=null, adminDataPromise=null, adminLayerVisible=false, selectedAdminId=null, hoverAdminId=null, maplibreModule=null;
 function loadAdminData(){
   if(adminDataPromise) return adminDataPromise;
   adminDataPromise=fetch('data/vinhlong-admin-2026.geojson',{cache:'force-cache'}).then(r=>{if(!r.ok)throw new Error('Administrative data '+r.status);return r.json()}).then(data=>{adminGeoJSON=data;renderAdminSearch('');return data});
@@ -346,7 +346,7 @@ function renderAdminSearch(q){
   if(!n){box.innerHTML='<div class="admin-search-hint">Type a commune or ward name to inspect its boundary and profile.</div>';return}
   const list=adminGeoJSON.features.filter(f=>{const p=f.properties||{};return [p.ten_xa,p.sap_nhap,p.khu_vuc_cu].some(v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().includes(n))}).slice(0,18);
   box.innerHTML=list.length?list.map(f=>{const p=f.properties;return '<button class="admin-result" data-id="'+escAdmin(p.ma_xa)+'"><strong>'+escAdmin(p.loai)+' '+escAdmin(p.ten_xa)+'</strong><span>'+escAdmin(p.khu_vuc_cu)+' · '+adminNum(p.dtich_km2)+' km² · '+adminNum(p.dan_so)+' people</span></button>'}).join(''):'<div class="admin-search-hint">No matching administrative unit.</div>';
-  box.querySelectorAll('.admin-result').forEach(b=>b.addEventListener('click',()=>{const f=adminGeoJSON.features.find(x=>String(x.properties?.ma_xa)===b.dataset.id);if(f){showAdminFeature(f,{fit:true});qs('#adminBrowser')?.removeAttribute('open')}}));
+  box.querySelectorAll('.admin-result').forEach(b=>b.addEventListener('click',async()=>{const f=adminGeoJSON.features.find(x=>String(x.properties?.ma_xa)===b.dataset.id);if(f){await setAdminLayerVisible(true);showAdminFeature(f,{fit:true});qs('#adminBrowser')?.removeAttribute('open')}}));
 }
 async function addAdminLayersToMap(ml){
   maplibreModule=ml;const data=await loadAdminData();if(!onlineMap||onlineMap.getSource('vinhlong-admin'))return;
@@ -365,8 +365,15 @@ async function addAdminLayersToMap(ml){
   onlineMap.on('mouseleave','admin-fill',()=>{onlineMap.getCanvas().style.cursor='';if(hoverAdminId!==null)try{onlineMap.setFeatureState({source:'vinhlong-admin',id:hoverAdminId},{hover:false})}catch{};hoverAdminId=null});
   onlineMap.on('click','admin-fill',e=>{const f=e.features?.[0];if(f)showAdminFeature(f)});
 }
-function setAdminLayerVisible(on){
-  adminLayerVisible=!!on;const btn=qs('#adminLayerToggle');btn?.classList.toggle('active',adminLayerVisible);
+async function setAdminLayerVisible(on){
+  adminLayerVisible=!!on;
+  const btn=qs('#adminLayerToggle');
+  btn?.classList.toggle('active',adminLayerVisible);
+  if(adminLayerVisible && onlineMap && maplibreModule && !onlineMap.getSource('vinhlong-admin')){
+    btn?.classList.add('loading');
+    try{await addAdminLayersToMap(maplibreModule)}catch(err){console.warn('Vĩnh Long administrative layer unavailable:',err);adminLayerVisible=false;btn?.classList.remove('active')}
+    finally{btn?.classList.remove('loading')}
+  }
   if(onlineMap) ['admin-fill','admin-line'].forEach(id=>{if(onlineMap.getLayer(id))onlineMap.setLayoutProperty(id,'visibility',adminLayerVisible?'visible':'none')});
   if(!adminLayerVisible)closeAdminDrawer();
 }
@@ -474,8 +481,8 @@ async function bootMapLibre(){
     onlineMap.addControl(new ml.ScaleControl({maxWidth:110,unit:'metric'}),'bottom-left');
 
     onlineMap.on('load',()=>{
+      maplibreModule=ml;
       addTourLayersToMap(ml);
-      addAdminLayersToMap(ml).catch(err=>console.warn('Vĩnh Long administrative layer unavailable:',err));
       syncTourRouteOnMap();
       fitActiveTourRoute(ml);
       onlineMap.resize();
@@ -524,7 +531,7 @@ if('IntersectionObserver' in window && tourMapSection){
 window.addEventListener('online',()=>bootMapLibre());
 
 qs('#adminLayerToggle')?.addEventListener('click',()=>setAdminLayerVisible(!adminLayerVisible));
-qs('#fitProvinceBtn')?.addEventListener('click',async()=>{await loadAdminData();const b=wholeAdminBounds();if(onlineMap&&b)onlineMap.fitBounds(b,{padding:48,maxZoom:9.4,duration:750})});
+qs('#fitProvinceBtn')?.addEventListener('click',async()=>{await setAdminLayerVisible(true);await loadAdminData();const b=wholeAdminBounds();if(onlineMap&&b)onlineMap.fitBounds(b,{padding:48,maxZoom:9.4,duration:750})});
 qs('#adminDrawerClose')?.addEventListener('click',closeAdminDrawer);
 qs('#adminSearch')?.addEventListener('input',e=>renderAdminSearch(e.target.value));
 qs('#adminBrowserToggle')?.addEventListener('click',()=>{const d=qs('#adminBrowser');if(!d)return;d.open=true;renderAdminSearch('');loadAdminData().catch(err=>console.warn('Administrative data:',err));d.scrollIntoView({behavior:'smooth',block:'nearest'});window.setTimeout(()=>qs('#adminSearch')?.focus(),450)});
