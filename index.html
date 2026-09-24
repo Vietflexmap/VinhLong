@@ -355,7 +355,7 @@ function showAdminFeature(feature,{fit=false}={}){
   qs('#adminAddress').textContent=p.pvhcc_dia_chi||'—';
   qs('#adminHotline').textContent=adminPhone(p.hotline);
   const drawer=qs('#adminDrawer');drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');
-  if(fit&&onlineMap&&maplibreModule){const b=adminFeatureBounds(feature);if(b)onlineMap.fitBounds(b,{padding:{top:90,bottom:90,left:90,right:390},maxZoom:12.8,duration:700})}
+  if(fit&&onlineMap&&maplibreModule){const b=adminFeatureBounds(feature);if(b){const mobile=window.innerWidth<760;onlineMap.fitBounds(b,{padding:mobile?{top:150,bottom:230,left:28,right:28}:{top:90,bottom:90,left:90,right:390},maxZoom:12.8,duration:700})}}
 }
 function closeAdminDrawer(){const d=qs('#adminDrawer');d?.classList.remove('open');d?.setAttribute('aria-hidden','true')}
 function renderAdminSearch(q){
@@ -370,15 +370,16 @@ function renderAdminSearch(q){
 async function addAdminLayersToMap(ml){
   maplibreModule=ml;const data=await loadAdminData();if(!onlineMap||onlineMap.getSource('vinhlong-admin'))return;
   onlineMap.addSource('vinhlong-admin',{type:'geojson',data,promoteId:'ma_xa'});
+  const beforeTour=onlineMap.getLayer('tour-line-day1')?'tour-line-day1':undefined;
   onlineMap.addLayer({id:'admin-fill',type:'fill',source:'vinhlong-admin',paint:{
-    'fill-color':['match',['get','khu_vuc_cu'],'Vĩnh Long (địa bàn cũ)','#11855b','Bến Tre (địa bàn cũ)','#d2ad62','Trà Vinh (địa bàn cũ)','#7257b6','#5a8d78'],
-    'fill-opacity':['case',['boolean',['feature-state','selected'],false],.30,['boolean',['feature-state','hover'],false],.16,.055]
-  }});
+    'fill-color':['match',['get','khu_vuc_cu'],'Vĩnh Long (địa bàn cũ)','#13835c','Bến Tre (địa bàn cũ)','#d2ad62','Trà Vinh (địa bàn cũ)','#7457b8','#5a8d78'],
+    'fill-opacity':['case',['boolean',['feature-state','selected'],false],.38,['boolean',['feature-state','hover'],false],.20,.09]
+  }},beforeTour);
   onlineMap.addLayer({id:'admin-line',type:'line',source:'vinhlong-admin',paint:{
-    'line-color':['case',['boolean',['feature-state','selected'],false],'#073a30','rgba(42,79,68,.65)'],
-    'line-width':['case',['boolean',['feature-state','selected'],false],2.8,1.0],
-    'line-opacity':.82
-  }});
+    'line-color':['case',['boolean',['feature-state','selected'],false],'#063f32',['boolean',['feature-state','hover'],false],'#0a694f','rgba(38,74,64,.78)'],
+    'line-width':['case',['boolean',['feature-state','selected'],false],3.2,['boolean',['feature-state','hover'],false],1.8,1.05],
+    'line-opacity':.92
+  }},beforeTour);
   ['admin-fill','admin-line'].forEach(id=>onlineMap.setLayoutProperty(id,'visibility',adminLayerVisible?'visible':'none'));
   if(adminLayerVisible){
     // Even if the external basemap tiles are blocked, administrative geography should remain usable.
