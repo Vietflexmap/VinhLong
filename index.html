@@ -142,6 +142,7 @@
       <input class="vt3d-search" id="vt3dSearch" type="search" placeholder="Search Vam Ho, Lan Vuong, heritage..." aria-label="Search virtual 3D tours">
     </div>
     <div class="vt3d-grid" id="vt3dGrid"></div>
+    <div class="vt3d-more-wrap"><button class="vt3d-more" id="vt3dMore" type="button">View all 13 virtual tours ↓</button></div>
     <div class="vt3d-source reveal">
       <i>i</i>
       <div><strong>Original tours stay original.</strong><p>This homepage is only the discovery and UI/UX layer. VR/360 content remains hosted by its original providers. No original 3D URL is rewritten, mirrored or replaced; each card can open the exact provider URL in the embedded viewer or a new tab.</p></div>
@@ -511,15 +512,23 @@ async function bootMapLibre(){
     mapLibreBooting=false;
   }
 }
-bootMapLibre();
+const tourMapSection=qs('#map');
+if('IntersectionObserver' in window && tourMapSection){
+  const tourMapObserver=new IntersectionObserver(entries=>{
+    if(entries.some(e=>e.isIntersecting)){bootMapLibre();tourMapObserver.disconnect()}
+  },{rootMargin:'650px 0px'});
+  tourMapObserver.observe(tourMapSection);
+}else{
+  bootMapLibre();
+}
 window.addEventListener('online',()=>bootMapLibre());
 
-loadAdminData().catch(err=>console.warn('Administrative data:',err));
 qs('#adminLayerToggle')?.addEventListener('click',()=>setAdminLayerVisible(!adminLayerVisible));
 qs('#fitProvinceBtn')?.addEventListener('click',async()=>{await loadAdminData();const b=wholeAdminBounds();if(onlineMap&&b)onlineMap.fitBounds(b,{padding:48,maxZoom:9.4,duration:750})});
 qs('#adminDrawerClose')?.addEventListener('click',closeAdminDrawer);
 qs('#adminSearch')?.addEventListener('input',e=>renderAdminSearch(e.target.value));
-qs('#adminBrowserToggle')?.addEventListener('click',()=>{const d=qs('#adminBrowser');if(!d)return;d.open=true;d.scrollIntoView({behavior:'smooth',block:'nearest'});window.setTimeout(()=>qs('#adminSearch')?.focus(),450)});
+qs('#adminBrowserToggle')?.addEventListener('click',()=>{const d=qs('#adminBrowser');if(!d)return;d.open=true;renderAdminSearch('');loadAdminData().catch(err=>console.warn('Administrative data:',err));d.scrollIntoView({behavior:'smooth',block:'nearest'});window.setTimeout(()=>qs('#adminSearch')?.focus(),450)});
+qs('#adminBrowser')?.addEventListener('toggle',e=>{if(e.currentTarget.open)loadAdminData().catch(err=>console.warn('Administrative data:',err))});
 
 
 // multi-step form
