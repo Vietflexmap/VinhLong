@@ -86,7 +86,7 @@
 
 /* ===== Editorial map-first redesign · 2026 administrative layer ===== */
 .section{padding:78px 0}
-.tourmap-section{background:linear-gradient(180deg,#f7f3eb 0%,#eef4ef 100%);overflow:hidden}
+.tourmap-section{background:linear-gradient(180deg,#f7f3eb 0%,#eef4ef 100%);overflow:hidden;scroll-margin-top:104px}
 .tourmap-story-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:34px;margin-bottom:26px}
 .tourmap-story-head h2{margin:8px 0 12px;font:400 clamp(40px,5.6vw,68px)/.94 var(--serif);letter-spacing:-.045em}
 .tourmap-story-head h2 em{font-weight:400;color:#72877e}
@@ -305,20 +305,25 @@ setRoute('day1');
 const TOUR_MAP_STYLE={
   version:8,
   sources:{
-    osm:{
+    basemap:{
       type:'raster',
-      tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tiles:[
+        'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+        'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+        'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+        'https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'
+      ],
       tileSize:256,
-      maxzoom:19,
-      attribution:'© OpenStreetMap contributors'
+      maxzoom:20,
+      attribution:'© OpenStreetMap contributors © CARTO'
     }
   },
   layers:[
-    {id:'osm-background',type:'background',paint:{'background-color':'#e9f1ec'}},
-    {id:'osm-base',type:'raster',source:'osm',paint:{'raster-opacity':1,'raster-fade-duration':180}}
+    {id:'map-background',type:'background',paint:{'background-color':'#e9f1ec'}},
+    {id:'basemap-raster',type:'raster',source:'basemap',paint:{'raster-opacity':1,'raster-fade-duration':120}}
   ]
 };
-let mapLibreBooting=false;
+let mapLibreBooting=false, mapBasemapReady=false;
 let adminGeoJSON=null, adminDataPromise=null, adminLayerVisible=false, selectedAdminId=null, hoverAdminId=null, maplibreModule=null;
 function loadAdminData(){
   if(adminDataPromise) return adminDataPromise;
@@ -427,13 +432,8 @@ async function addAdminLayersToMap(ml){
     'line-opacity':.92
   }},beforeTour);
   ['admin-fill','admin-line'].forEach(id=>onlineMap.setLayoutProperty(id,'visibility',adminLayerVisible?'visible':'none'));
-  if(adminLayerVisible){
-    // Even if the external basemap tiles are blocked, administrative geography should remain usable.
-    qs('#maplibreMap')?.classList.add('ready');
-    qs('#fallbackMap')?.classList.add('hidden');
-    qs('#mapStatus')?.classList.add('hidden');
-    onlineMap.resize();
-  }
+  // Renderer visibility is controlled by basemap health.
+  // Do not hide the same-origin SVG fallback merely because MapLibre exists.
   onlineMap.on('mousemove','admin-fill',e=>{onlineMap.getCanvas().style.cursor='pointer';const id=e.features?.[0]?.id;if(id===undefined)return;if(hoverAdminId!==null&&hoverAdminId!==id)try{onlineMap.setFeatureState({source:'vinhlong-admin',id:hoverAdminId},{hover:false})}catch{};hoverAdminId=id;try{onlineMap.setFeatureState({source:'vinhlong-admin',id},{hover:true})}catch{}});
   onlineMap.on('mouseleave','admin-fill',()=>{onlineMap.getCanvas().style.cursor='';if(hoverAdminId!==null)try{onlineMap.setFeatureState({source:'vinhlong-admin',id:hoverAdminId},{hover:false})}catch{};hoverAdminId=null});
   onlineMap.on('click','admin-fill',e=>{const f=e.features?.[0];if(f)showAdminFeature(f)});
@@ -461,10 +461,18 @@ async function setAdminLayerVisible(on){
         }
         if(!onlineMap.getSource('vinhlong-admin')) await addAdminLayersToMap(maplibreModule);
         ['admin-fill','admin-line'].forEach(id=>{if(onlineMap.getLayer(id))onlineMap.setLayoutProperty(id,'visibility','visible')});
-        qs('#maplibreMap')?.classList.add('ready');
-        qs('#fallbackMap')?.classList.add('hidden');
-        qs('#mapStatus')?.classList.add('hidden');
-        onlineMap.resize();
+        if(mapBasemapReady){
+          qs('#maplibreMap')?.classList.add('ready');
+          qs('#fallbackMap')?.classList.add('hidden');
+          qs('#mapStatus')?.classList.add('hidden');
+          onlineMap.resize();
+        }else{
+          renderFallbackAdmin();
+          setFallbackAdminVisible(true);
+          qs('#maplibreMap')?.classList.remove('ready');
+          qs('#fallbackMap')?.classList.remove('hidden');
+          qs('#mapStatus')?.classList.add('hidden');
+        }
       }
     }catch(err){
       console.warn('Vĩnh Long administrative layer unavailable:',err);
@@ -588,6 +596,7 @@ async function bootMapLibre(){
   const revealLiveMap=()=>{
     if(mapReady)return;
     mapReady=true;
+    mapBasemapReady=true;
     stage?.classList.add('ready');
     fallback?.classList.add('hidden');
     status?.classList.add('hidden');
@@ -628,9 +637,9 @@ async function bootMapLibre(){
       fitActiveTourRoute(ml);
       onlineMap.resize();
 
-      // Do not wait for every raster tile to finish. Once the style is loaded,
-      // routes and administrative geography are already usable.
-      revealLiveMap();
+      // Style load only proves MapLibre exists. Keep the SVG renderer until
+      // the raster basemap itself is confirmed ready.
+      status.textContent='Loading map tiles…';
 
       if(adminLayerVisible){
         try{
@@ -642,8 +651,18 @@ async function bootMapLibre(){
       }
     });
 
+    onlineMap.on('sourcedata',e=>{
+      if(e.sourceId==='basemap' && (e.isSourceLoaded || onlineMap?.isSourceLoaded?.('basemap'))) revealLiveMap();
+    });
+    onlineMap.on('idle',()=>{
+      if(!mapReady && onlineMap?.isSourceLoaded?.('basemap')) revealLiveMap();
+    });
+
     const failSafe=window.setTimeout(()=>{
-      if(!mapReady) keepFallback('Live map is taking longer than expected — the built-in map remains available.');
+      if(!mapReady){
+        keepFallback('Using built-in map — live basemap unavailable.');
+        status?.classList.add('hidden');
+      }
     },9000);
     onlineMap.once('load',()=>window.clearTimeout(failSafe));
     onlineMap.once('remove',()=>window.clearTimeout(failSafe));
@@ -652,8 +671,10 @@ async function bootMapLibre(){
       const msg=String(event?.error?.message||event?.error||'');
       console.warn('Interactive Vĩnh Long Tour Map:',event?.error||event);
       // Tile errors must not hide a working MapLibre canvas or the administrative overlay.
-      if(!mapReady && /style|webgl|worker|module/i.test(msg)){
-        keepFallback('Live map is temporarily unavailable — the built-in map remains active.');
+      if(!mapReady && /style|webgl|worker|module|raster|tile|source|network|fetch/i.test(msg)){
+        mapBasemapReady=false;
+        keepFallback('Using built-in map — live basemap unavailable.');
+        status?.classList.add('hidden');
       }
     });
 
@@ -670,7 +691,9 @@ async function bootMapLibre(){
   }catch(err){
     console.warn('MapLibre enhancement unavailable; keeping the built-in route map.',err);
     onlineMap=null;
+    mapBasemapReady=false;
     keepFallback();
+    status?.classList.add('hidden');
   }finally{
     mapLibreBooting=false;
   }
@@ -679,7 +702,7 @@ async function bootMapLibre(){
 const tourMapSection=qs('#map');
 if('IntersectionObserver' in window && tourMapSection){
   const tourMapObserver=new IntersectionObserver(entries=>{
-    if(entries.some(e=>e.isIntersecting)){bootMapLibre();tourMapObserver.disconnect()}
+    if(entries.some(e=>e.isIntersecting)){loadAdminData().catch(()=>{});bootMapLibre();tourMapObserver.disconnect()}
   },{rootMargin:'650px 0px'});
   tourMapObserver.observe(tourMapSection);
 }else{
@@ -688,7 +711,7 @@ if('IntersectionObserver' in window && tourMapSection){
 window.addEventListener('online',()=>bootMapLibre());
 
 qs('#adminLayerToggle')?.addEventListener('click',()=>setAdminLayerVisible(!adminLayerVisible));
-qs('#fitProvinceBtn')?.addEventListener('click',async()=>{await setAdminLayerVisible(true);await loadAdminData();const b=wholeAdminBounds();if(onlineMap&&b)onlineMap.fitBounds(b,{padding:48,maxZoom:9.4,duration:750})});
+qs('#fitProvinceBtn')?.addEventListener('click',async()=>{await setAdminLayerVisible(true);await loadAdminData();const b=wholeAdminBounds();if(onlineMap&&mapBasemapReady&&b)onlineMap.fitBounds(b,{padding:48,maxZoom:9.4,duration:750});else{renderFallbackAdmin();setFallbackAdminVisible(true)}});
 qs('#adminDrawerClose')?.addEventListener('click',closeAdminDrawer);
 qs('#adminSearch')?.addEventListener('input',e=>renderAdminSearch(e.target.value));
 qs('#adminBrowserToggle')?.addEventListener('click',()=>{const d=qs('#adminBrowser');if(!d)return;d.open=true;renderAdminSearch('');loadAdminData().catch(err=>console.warn('Administrative data:',err));d.scrollIntoView({behavior:'smooth',block:'nearest'});window.setTimeout(()=>qs('#adminSearch')?.focus(),450)});
